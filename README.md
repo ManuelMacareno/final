@@ -13,5 +13,5 @@ En macOS/Linux: source env/bin/activate
 pip install -r requirements.txt
 
 4. Levantar el servidor
-5. 
+   
 cd api uvicorn main:app --reload
