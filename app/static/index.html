@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Expense Tracker</title>
+    <style>
+      body { font-family: system-ui, Arial, sans-serif; margin: 20px; }
+      h2 { margin-top: 32px; }
+      input, button, select { padding: 8px; margin: 4px 0; }
+      .card { border: 1px solid #ddd; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+      .row { display: flex; gap: 16px; flex-wrap: wrap; }
+      .row > div { flex: 1 1 280px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>Expense Tracker</h1>
+
+    <div class="row">
+      <div class="card">
+        <h2>Registro</h2>
+        <input id="reg_email" placeholder="Email" type="email" />
+        <input id="reg_first" placeholder="Nombre" />
+        <input id="reg_last" placeholder="Apellido" />
+        <input id="reg_pass" placeholder="Contraseña" type="password" />
+        <button id="btn_register">Crear cuenta</button>
+        <div class="muted" id="register_msg"></div>
+      </div>
+
+      <div class="card">
+        <h2>Login</h2>
+        <input id="login_email" placeholder="Email" type="email" />
+        <input id="login_pass" placeholder="Contraseña" type="password" />
+        <button id="btn_login">Iniciar sesión</button>
+        <div class="muted" id="login_msg"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Nuevo gasto</h2>
+      <div class="row">
+        <div>
+          <label>Monto</label>
+          <input id="exp_amount" type="number" step="0.01" />
+        </div>
+        <div>
+          <label>Descripción</label>
+          <input id="exp_desc" />
+        </div>
+        <div>
+          <label>Fecha</label>
+          <input id="exp_date" type="date" />
+        </div>
+        <div>
+          <label>Lugar</label>
+          <input id="exp_location" />
+        </div>
+        <div>
+          <label>URL Comprobante</label>
+          <input id="exp_receipt" />
+        </div>
+      </div>
+      <div>
+        <label><input id="exp_recurring" type="checkbox" /> Recurrente</label>
+        <input id="exp_freq" placeholder="Frecuencia" />
+      </div>
+      <button id="btn_create_expense">Crear gasto</button>
+      <div class="muted" id="expense_msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Gastos</h2>
+      <div class="row">
+        <div>
+          <label>Desde</label>
+          <input id="filter_start" type="date" />
+        </div>
+        <div>
+          <label>Hasta</label>
+          <input id="filter_end" type="date" />
+        </div>
+        <div style="align-self:end;">
+          <button id="btn_load_expenses">Cargar</button>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Monto</th><th>Descripción</th><th>Lugar</th>
+          </tr>
+        </thead>
+        <tbody id="tbl_expenses"></tbody>
+      </table>
+    </div>
+
+    <script>
+      const apiBase = '';
+      let token = localStorage.getItem('token') || '';
+
+      function setMsg(id, text) { document.getElementById(id).textContent = text; }
+      function getVal(id) { return document.getElementById(id).value; }
+      function getChecked(id) { return document.getElementById(id).checked; }
+
+      document.getElementById('btn_register').onclick = async () => {
+        setMsg('register_msg', 'Procesando...');
+        try {
+          const res = await fetch(`${apiBase}/api/v1/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: getVal('reg_email'),
+              first_name: getVal('reg_first'),
+              last_name: getVal('reg_last'),
+              password: getVal('reg_pass'),
+            }),
+          });
+          let msg = '';
+          try { const data = await res.json(); msg = data.detail || 'OK'; }
+          catch { msg = await res.text(); }
+          setMsg('register_msg', res.ok ? 'Usuario creado' : (msg || 'Error'));
+        } catch (e) { setMsg('register_msg', 'Error de red'); }
+      };
+
+      document.getElementById('btn_login').onclick = async () => {
+        setMsg('login_msg', 'Procesando...');
+        try {
+          const form = new URLSearchParams();
+          form.append('username', getVal('login_email'));
+          form.append('password', getVal('login_pass'));
+          form.append('grant_type', 'password');
+          const res = await fetch(`${apiBase}/api/v1/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: form.toString(),
+          });
+          let payload = null; try { payload = await res.json(); } catch {}
+          if (res.ok && payload && payload.access_token) {
+            token = payload.access_token;
+            localStorage.setItem('token', token);
+            setMsg('login_msg', 'Sesión iniciada');
+          } else {
+            const txt = payload?.detail || (await res.text());
+            setMsg('login_msg', txt || 'Error');
+          }
+        } catch (e) { setMsg('login_msg', 'Error de red'); }
+      };
+
+      document.getElementById('btn_create_expense').onclick = async () => {
+        setMsg('expense_msg', 'Procesando...');
+        try {
+          if (!token) { setMsg('expense_msg', 'Inicia sesión primero'); return; }
+          const payload = {
+            amount: parseFloat(getVal('exp_amount')),
+            description: getVal('exp_desc'),
+            date: getVal('exp_date'),
+            location: getVal('exp_location') || null,
+            receipt_url: getVal('exp_receipt') || null,
+            is_recurring: getChecked('exp_recurring'),
+            recurrence_frequency: getVal('exp_freq') || null,
+          };
+          const res = await fetch(`${apiBase}/api/v1/expenses/`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          });
+          let msg = '';
+          try { const d = await res.json(); msg = d.detail || 'OK'; } catch { msg = await res.text(); }
+          setMsg('expense_msg', res.ok ? 'Gasto creado' : (msg || 'Error'));
+          if (res.ok) { loadExpenses(); }
+        } catch (e) { setMsg('expense_msg', 'Error de red'); }
+      };
+
+      async function loadExpenses() {
+        const start = getVal('filter_start');
+        const end = getVal('filter_end');
+        let qs = '';
+        if (start && end) { qs = `?start_date=${start}&end_date=${end}`; }
+        const res = await fetch(`${apiBase}/api/v1/expenses/${qs}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        let list = [];
+        try { list = await res.json(); } catch { list = []; }
+        const tbody = document.getElementById('tbl_expenses');
+        tbody.innerHTML = '';
+        if (Array.isArray(list)) {
+          list.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${item.date}</td><td>${item.amount.toFixed ? item.amount.toFixed(2) : item.amount}</td><td>${item.description}</td><td>${item.location||''}</td>`;
+            tbody.appendChild(tr);
+          });
+        }
+      }
+
+      document.getElementById('btn_load_expenses').onclick = loadExpenses;
+    </script>
+  </body>
+  </html>
+
+
